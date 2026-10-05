@@ -1,0 +1,7 @@
+/Build/*
+!/Build/.gitignore
+__pycache__/
+*.py[cod]
+.DS_Store
+.pytest_cache/
+.venv/
