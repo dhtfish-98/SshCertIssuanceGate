@@ -4,16 +4,17 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ssh-cert-issuance-gate"
-version = "0.1.0"
+version = "0.1.1"
 description = "Local SSH user certificate authorization gate research lab"
-readme = "README.md"
+readme = "项目文档/README.md"
 requires-python = ">=3.10"
 authors = [{name = "dhtfish98"}]
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["项目文档/LICENSE"]
 classifiers = ["Programming Language :: Python :: 3", "License :: OSI Approved :: MIT License"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ssh_cert_issuance_gate"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/ssh_cert_issuance_gate", "tests", "项目文档", "README.md", "LICENSE", "pyproject.toml"]
+include = ["src/ssh_cert_issuance_gate", "tests", "项目文档", "pyproject.toml"]

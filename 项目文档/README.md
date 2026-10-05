@@ -25,5 +25,5 @@ are invoked as separately installed system tools and are not bundled.
 
 Run `python tools/validate_release.py` from this repository root after
 installing the `build` package. It puts every build and test output under
-`Build/`. Details and boundaries are in [项目文档/项目说明.md](项目文档/项目说明.md).
+`Build/`. Details and boundaries are in [项目说明.md](项目说明.md).
 Passing this synthetic lab is not a CVP eligibility or approval determination.

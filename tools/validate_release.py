@@ -10,12 +10,17 @@ import subprocess
 import sys
 import tarfile
 import zipfile
+from email import message_from_bytes
+from email.policy import default
 from pathlib import Path
 
 
 SOURCE = Path(__file__).resolve().parents[1]
 BUILD = SOURCE / "Build"
 DOCS = SOURCE / "项目文档"
+VERSION = "0.1.1"
+DIST_ROOT = f"ssh_cert_issuance_gate-{VERSION}"
+DOCUMENTS = ("README.md", "LICENSE", "项目说明.md")
 
 
 def sha(path: Path) -> str:
@@ -75,6 +80,10 @@ def run_mode(mode: str, project: Path, python: Path, env: dict[str, str]) -> dic
 
 def main() -> None:
     BUILD.mkdir(exist_ok=True)
+    if any((SOURCE / name).exists() for name in ("README.md", "LICENSE")):
+        raise RuntimeError("root documents must be kept under 项目文档")
+    if not all((DOCS / name).is_file() for name in DOCUMENTS):
+        raise RuntimeError("project documentation is incomplete")
     for name in ("dist", "stage", "venv", "consumer", "source", "sdist", "installed", "tmp"):
         path = BUILD / name
         if path.exists():
@@ -93,18 +102,36 @@ def main() -> None:
     wheel = next((BUILD / "dist").glob("*.whl"))
     with tarfile.open(sdist, "r:gz") as archive:
         members = archive.getnames()
-        if not all(name.startswith("ssh_cert_issuance_gate-0.1.0/") and
+        if not all(name.startswith(f"{DIST_ROOT}/") and
                    ".." not in Path(name).parts and not Path(name).is_absolute()
                    for name in members):
             raise RuntimeError("unexpected sdist root")
         if any(not (member.isfile() or member.isdir()) for member in archive.getmembers()):
             raise RuntimeError("unsupported sdist member type")
         archive.extractall(BUILD / "stage")
-    stage = BUILD / "stage/ssh_cert_issuance_gate-0.1.0"
-    if not (stage / "项目文档/项目说明.md").is_file():
-        raise RuntimeError("project document absent from sdist")
+    stage = BUILD / "stage" / DIST_ROOT
+    if any((stage / name).exists() for name in ("README.md", "LICENSE")):
+        raise RuntimeError("root documents leaked into sdist")
+    if not all((stage / "项目文档" / name).read_bytes() == (DOCS / name).read_bytes()
+               for name in DOCUMENTS):
+        raise RuntimeError("project documentation missing or changed in sdist")
     with zipfile.ZipFile(wheel) as archive:
         wheel_names = archive.namelist()
+        metadata_name = f"{DIST_ROOT}.dist-info/METADATA"
+        metadata = message_from_bytes(archive.read(metadata_name), policy=default)
+        license_name = f"{DIST_ROOT}.dist-info/licenses/项目文档/LICENSE"
+        license_in_wheel = license_name in wheel_names and archive.read(license_name) == (DOCS / "LICENSE").read_bytes()
+    metadata_valid = (
+        metadata["Name"] == "ssh-cert-issuance-gate"
+        and metadata["Version"] == VERSION
+        and metadata["Author"] == "dhtfish98"
+        and metadata["License-Expression"] == "MIT"
+        and "项目文档/LICENSE" in metadata.get_all("License-File", [])
+        and metadata["Description-Content-Type"] == "text/markdown"
+        and "# SSH Certificate Issuance Gate" in metadata.get_payload()
+    )
+    if not metadata_valid or not license_in_wheel:
+        raise RuntimeError("wheel metadata or license file incorrect")
     expected_package = {
         "ssh_cert_issuance_gate/__init__.py",
         "ssh_cert_issuance_gate/gate.py",
@@ -150,7 +177,10 @@ def main() -> None:
         "installed_import_from_isolated_venv": True,
         "private_key_marker_absent_in_delivery": private_absent,
         "temporary_key_directories_empty": temp_empty,
-        "docs_in_project_docs_dir": DOCS.is_dir(),
+        "docs_in_project_docs_dir": all((DOCS / name).is_file() for name in DOCUMENTS),
+        "root_documents_absent": all(not (SOURCE / name).exists() for name in ("README.md", "LICENSE")),
+        "sdist_documents_match_source": True,
+        "wheel_metadata_and_license_match_source": metadata_valid and license_in_wheel,
     }
     manifest = source_manifest()
     digest = hashlib.sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest()
@@ -158,6 +188,7 @@ def main() -> None:
         "project": "SshCertIssuanceGate",
         "status": "PASS_LOCAL_ONLY" if all(checks.values()) else "FAIL",
         "author": "dhtfish98",
+        "version": VERSION,
         "upstream_reference": {
             "repo": "smallstep/certificates",
             "commit": "fdeb6fdf53f9ad430c283940eb4c5f1203406fa7",
@@ -170,7 +201,9 @@ def main() -> None:
         "source_manifest_sha256": digest,
         "source_files_sha256": manifest,
         "sdist": {"name": sdist.name, "sha256": sha(sdist), "members": members},
-        "wheel": {"name": wheel.name, "sha256": sha(wheel), "members": wheel_names},
+        "wheel": {"name": wheel.name, "sha256": sha(wheel), "members": wheel_names,
+                  "metadata": {key: metadata[key] for key in ("Name", "Version", "Author",
+                                                               "License-Expression", "License-File")}},
         "installed_import_path": import_path,
         "tools": {
             "ssh": invoke("ssh-version", ["ssh", "-V"], BUILD, env).strip(),
